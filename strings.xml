@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">مساعد النقر الميسر</string>
+    <string name="accessibility_service_label">خدمة مساعد النقر الميسر</string>
+    <string name="accessibility_service_description">خدمة إمكانية وصول تساعد المستخدم على تنفيذ نقرات وسحب مكررة بإعدادات واضحة ومناسبة لقارئ الشاشة. استخدمها فقط للأغراض الشخصية والمسموح بها.</string>
+</resources>
