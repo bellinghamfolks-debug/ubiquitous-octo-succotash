@@ -51,6 +51,10 @@ public class AudioEngine {
 
     private volatile Listener listener;
 
+    // handler مُنشأ مرة واحدة (بدل إنشاء جديد كل إطار في processingLoop)
+    private final android.os.Handler mainHandler =
+            new android.os.Handler(android.os.Looper.getMainLooper());
+
     // مصفوفات العمل
     private final float[] inputF    = new float[PROCESS_BUFFER];
     private final float[] outputF   = new float[PROCESS_BUFFER];
@@ -95,11 +99,10 @@ public class AudioEngine {
     public void stopRecording() {
         File saved = writer.stop();
         if (saved != null && listener != null) {
-            long dur = System.currentTimeMillis() - recordingStartMs;
-            android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+            final long dur = System.currentTimeMillis() - recordingStartMs;
             final Listener snap = listener;
             final File fSaved = saved;
-            h.post(new Runnable() {
+            mainHandler.post(new Runnable() {
                 public void run() { if (snap != null) snap.onRecordingSaved(fSaved, dur); }
             });
         }
@@ -188,22 +191,20 @@ public class AudioEngine {
                     final double fd = detectedHz, ft = activeMaqam.nearestNote(detectedHz, rootHz), fdev = dev;
                     final String fn = name;
                     final Listener snap = listener;
-                    new android.os.Handler(android.os.Looper.getMainLooper())
-                            .post(new Runnable() {
-                                public void run() {
-                                    if (snap != null) snap.onPitchDetected(fd, ft, fdev, fn);
-                                }
-                            });
+                    mainHandler.post(new Runnable() {
+                        public void run() {
+                            if (snap != null) snap.onPitchDetected(fd, ft, fdev, fn);
+                        }
+                    });
                 }
             } else if (detectedHz <= 0) {
                 currentRatio = 1.0;
                 shifter.reset();
                 if (listener != null) {
                     final Listener snap = listener;
-                    new android.os.Handler(android.os.Looper.getMainLooper())
-                            .post(new Runnable() {
-                                public void run() { if (snap != null) snap.onSilence(); }
-                            });
+                    mainHandler.post(new Runnable() {
+                        public void run() { if (snap != null) snap.onSilence(); }
+                    });
                 }
             }
 
