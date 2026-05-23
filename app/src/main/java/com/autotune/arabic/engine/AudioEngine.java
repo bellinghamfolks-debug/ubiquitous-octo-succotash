@@ -138,7 +138,9 @@ public class AudioEngine {
         player.play();
         running = true;
 
-        processingThread = new Thread(this::processingLoop, "AudioEngine");
+        processingThread = new Thread(new Runnable() {
+            public void run() { processingLoop(); }
+        }, "AudioEngine");
         processingThread.setPriority(Thread.MAX_PRIORITY);
         processingThread.start();
         return true;
