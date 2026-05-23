@@ -430,8 +430,16 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     }
 
     private void startEngine() {
-        if (!engine.start()) {
-            Toast.makeText(this, "تعذّر فتح الميكروفون", Toast.LENGTH_LONG).show();
+        boolean started;
+        try {
+            started = engine.start();
+        } catch (Throwable t) {
+            showEngineError(t);
+            return;
+        }
+        if (!started) {
+            Toast.makeText(this, "تعذّر فتح الميكروفون — تأكد من منح إذن الميكروفون",
+                    Toast.LENGTH_LONG).show();
             return;
         }
         btnStart.setText("■  إيقاف المعالجة");
@@ -441,6 +449,38 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         tvStatus.setTextColor(COLOR_GREEN);
         btnRecord.setEnabled(true);
         btnRecord.setBackgroundColor(COLOR_REC);
+    }
+
+    private void showEngineError(Throwable t) {
+        StringWriter sw = new StringWriter();
+        t.printStackTrace(new PrintWriter(sw));
+        final String trace = t.getClass().getSimpleName() + ": " + t.getMessage()
+                + "\n\n" + sw.toString();
+        // حفظ في ملف
+        try {
+            File dir = new File(getFilesDir(), "crashes");
+            dir.mkdirs();
+            PrintWriter pw = new PrintWriter(new File(dir, "engine_error.txt"));
+            pw.println("Android: " + Build.VERSION.RELEASE + " API " + Build.VERSION.SDK_INT);
+            pw.println("Device: " + Build.MANUFACTURER + " " + Build.MODEL);
+            pw.print(trace);
+            pw.close();
+        } catch (Exception ignored) {}
+        // عرض AlertDialog بالخطأ مع زر نسخ
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("خطأ في المحرك الصوتي")
+                .setMessage(trace)
+                .setPositiveButton("نسخ", new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        ClipboardManager cm = (ClipboardManager)
+                                getSystemService(Context.CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(ClipData.newPlainText("err", trace));
+                        Toast.makeText(MainActivity.this, "تم النسخ",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("إغلاق", null)
+                .show();
     }
 
     private void toggleRecording() {
