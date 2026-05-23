@@ -2,6 +2,7 @@ package com.autotune.arabic;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -10,7 +11,10 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -28,65 +32,57 @@ import com.autotune.arabic.engine.AudioEngine;
 import com.autotune.arabic.maqam.Maqam;
 import com.autotune.arabic.maqam.MaqamLibrary;
 
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
-/**
- * الشاشة الرئيسية لتطبيق أوتوتيون عربي.
- *
- * تتضمن:
- *  - عرض الطبقة المكتشَفة والهدف والانحراف بالسنت
- *  - اختيار المقام (13 مقاماً عربياً)
- *  - اختيار نغمة الجذر (12 نغمة كروماتية)
- *  - التحكم في الحساسية وسرعة التصحيح
- *  - وضع المرور المباشر (Bypass)
- */
 public class MainActivity extends Activity implements AudioEngine.Listener {
 
-    // ─── ثوابت الألوان ──────────────────────────────────────────────
-    private static final int COLOR_BG       = 0xFF0D0D14;  // خلفية داكنة
-    private static final int COLOR_CARD     = 0xFF1A1A2E;  // بطاقات
-    private static final int COLOR_GOLD     = 0xFFD4A017;  // ذهبي عربي
-    private static final int COLOR_GREEN    = 0xFF00E676;  // مضبوط
-    private static final int COLOR_RED      = 0xFFFF1744;  // بعيد
-    private static final int COLOR_TEXT     = 0xFFE8E8F0;  // نص رئيسي
-    private static final int COLOR_SUBTEXT  = 0xFF8888AA;  // نص فرعي
-    private static final int COLOR_DIVIDER  = 0xFF2A2A45;  // فاصل
+    // ─── ألوان ──────────────────────────────────────────────────────
+    private static final int COLOR_BG      = 0xFF0D0D14;
+    private static final int COLOR_CARD    = 0xFF1A1A2E;
+    private static final int COLOR_GOLD    = 0xFFD4A017;
+    private static final int COLOR_GREEN   = 0xFF00E676;
+    private static final int COLOR_RED     = 0xFFFF1744;
+    private static final int COLOR_TEXT    = 0xFFE8E8F0;
+    private static final int COLOR_SUBTEXT = 0xFF8888AA;
+    private static final int COLOR_DIVIDER = 0xFF2A2A45;
+    private static final int COLOR_REC     = 0xFFFF1744;  // أحمر التسجيل
 
     private static final int PERM_CODE = 101;
 
-    // ─── المحرك والبيانات ────────────────────────────────────────────
+    // ─── المحرك ─────────────────────────────────────────────────────
     private AudioEngine engine;
     private List<Maqam> maqams;
     private int selectedMaqamIdx = 0;
-    private int selectedRootIdx  = 2;  // ري افتراضياً
+    private int selectedRootIdx  = 2;
 
     // ─── عناصر الواجهة ──────────────────────────────────────────────
-    private PitchMeterView  pitchMeter;
-    private TextView        tvDetectedNote;
-    private TextView        tvDetectedHz;
-    private TextView        tvTargetNote;
-    private TextView        tvDeviationCents;
-    private TextView        tvStatus;
-    private TextView[]      maqamButtons;
-    private TextView[]      rootButtons;
-    private TextView        btnStart;
-    private CheckBox        chkBypass;
+    private PitchMeterView pitchMeter;
+    private TextView       tvDetectedNote, tvDetectedHz, tvTargetNote, tvDeviationCents;
+    private TextView       tvStatus;
+    private TextView[]     maqamButtons, rootButtons;
+    private TextView       btnStart, btnRecord;
+    private CheckBox       chkBypass;
+    private LinearLayout   recordingsContainer;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
     // ─── دورة الحياة ────────────────────────────────────────────────
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().getDecorView().setBackgroundColor(COLOR_BG);
-
         maqams = MaqamLibrary.buildAll();
         engine = new AudioEngine();
         engine.setListener(this);
         engine.setMaqam(maqams.get(selectedMaqamIdx));
         engine.setRootHz(MaqamLibrary.ROOT_FREQUENCIES[selectedRootIdx]);
-
         buildUi();
     }
 
@@ -98,15 +94,15 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
-        if (code == PERM_CODE && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+        if (code == PERM_CODE && results.length > 0
+                && results[0] == PackageManager.PERMISSION_GRANTED) {
             startEngine();
         } else {
-            Toast.makeText(this, "يجب منح إذن الميكروفون لاستخدام التطبيق", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "يجب منح إذن الميكروفون", Toast.LENGTH_LONG).show();
         }
     }
 
     // ─── بناء الواجهة ────────────────────────────────────────────────
-
     private void buildUi() {
         ScrollView root = new ScrollView(this);
         root.setBackgroundColor(COLOR_BG);
@@ -117,39 +113,38 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         page.setPadding(dp(16), dp(24), dp(16), dp(32));
         root.addView(page);
 
-        // عنوان التطبيق
         page.addView(buildHeader());
-
-        // شاشة عرض الطبقة الصوتية
         page.addView(buildPitchDisplay(), mpWrap(0, dp(20)));
-
-        // اختيار المقام
         page.addView(sectionTitle("اختر المقام"));
         page.addView(buildMaqamGrid(), mpWrap(0, dp(8)));
-
-        // اختيار الجذر
         page.addView(sectionTitle("نغمة الجذر"));
         page.addView(buildRootRow(), mpWrap(0, dp(8)));
-
-        // التحكمات
         page.addView(sectionTitle("إعدادات التصحيح"));
         page.addView(buildControls(), mpWrap(0, dp(8)));
 
-        // وضع التجاوز
         chkBypass = new CheckBox(this);
-        chkBypass.setText("وضع التمرير المباشر (Bypass) — سماع الصوت بدون تصحيح");
+        chkBypass.setText("وضع التمرير المباشر (Bypass)");
         chkBypass.setTextColor(COLOR_SUBTEXT);
         chkBypass.setTextSize(15);
-        chkBypass.setOnCheckedChangeListener((b, checked) -> engine.setBypass(checked));
+        chkBypass.setOnCheckedChangeListener((b, c) -> engine.setBypass(c));
         page.addView(chkBypass, mpWrap(0, dp(12)));
 
-        // زر التشغيل/الإيقاف
+        // ─── أزرار التشغيل والتسجيل ─────────────────────────────────
         page.addView(buildStartButton(), mpWrap(dp(8), dp(4)));
+        page.addView(buildRecordButton(), mpWrap(dp(8), dp(8)));
 
-        // ملاحظة سفلية
-        TextView note = label("التطبيق للاستخدام الشخصي والفني فقط.", 13, COLOR_SUBTEXT);
+        // ─── قائمة التسجيلات المحفوظة ────────────────────────────────
+        page.addView(sectionTitle("التسجيلات المحفوظة"));
+
+        recordingsContainer = new LinearLayout(this);
+        recordingsContainer.setOrientation(LinearLayout.VERTICAL);
+        page.addView(recordingsContainer, mpWrap(0, dp(4)));
+
+        refreshRecordingsList();
+
+        TextView note = label("ملف: محفوظ في مجلد Music في الجهاز", 12, COLOR_SUBTEXT);
         note.setGravity(Gravity.CENTER);
-        page.addView(note, mpWrap(0, dp(16)));
+        page.addView(note, mpWrap(0, dp(12)));
 
         setContentView(root);
     }
@@ -158,7 +153,6 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         LinearLayout h = new LinearLayout(this);
         h.setOrientation(LinearLayout.VERTICAL);
         h.setGravity(Gravity.CENTER);
-        h.setPadding(0, 0, 0, dp(8));
 
         TextView title = label("أوتوتيون عربي", 28, COLOR_GOLD);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -172,7 +166,6 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         tvStatus = label("● متوقف", 13, COLOR_SUBTEXT);
         tvStatus.setGravity(Gravity.CENTER);
         h.addView(tvStatus, mpWrap(0, dp(4)));
-
         return h;
     }
 
@@ -182,51 +175,45 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         card.setGravity(Gravity.CENTER);
         card.setPadding(dp(16), dp(20), dp(16), dp(20));
 
-        // عرض الطبقة المكتشَفة
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        row1.setGravity(Gravity.CENTER);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
 
         LinearLayout col1 = col();
-        TextView lbl1 = label("صوتك", 12, COLOR_SUBTEXT);
-        lbl1.setGravity(Gravity.CENTER);
+        col1.addView(label("صوتك", 12, COLOR_SUBTEXT));
         tvDetectedNote = label("—", 42, COLOR_TEXT);
-        tvDetectedNote.setGravity(Gravity.CENTER);
         tvDetectedNote.setTypeface(Typeface.DEFAULT_BOLD);
+        tvDetectedNote.setGravity(Gravity.CENTER);
+        col1.addView(tvDetectedNote);
         tvDetectedHz = label("— هرتز", 13, COLOR_SUBTEXT);
         tvDetectedHz.setGravity(Gravity.CENTER);
-        col1.addView(lbl1, mpWrap());
-        col1.addView(tvDetectedNote, mpWrap());
-        col1.addView(tvDetectedHz, mpWrap());
+        col1.addView(tvDetectedHz);
 
         TextView arrow = label("→", 28, COLOR_GOLD);
         arrow.setPadding(dp(16), 0, dp(16), 0);
 
         LinearLayout col2 = col();
-        TextView lbl2 = label("الهدف", 12, COLOR_SUBTEXT);
-        lbl2.setGravity(Gravity.CENTER);
+        col2.addView(label("الهدف", 12, COLOR_SUBTEXT));
         tvTargetNote = label("—", 42, COLOR_GREEN);
-        tvTargetNote.setGravity(Gravity.CENTER);
         tvTargetNote.setTypeface(Typeface.DEFAULT_BOLD);
+        tvTargetNote.setGravity(Gravity.CENTER);
+        col2.addView(tvTargetNote);
         tvDeviationCents = label("± 0 سنت", 13, COLOR_SUBTEXT);
         tvDeviationCents.setGravity(Gravity.CENTER);
-        col2.addView(lbl2, mpWrap());
-        col2.addView(tvTargetNote, mpWrap());
-        col2.addView(tvDeviationCents, mpWrap());
+        col2.addView(tvDeviationCents);
 
-        row1.addView(col1, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        row1.addView(arrow);
-        row1.addView(col2, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        card.addView(row1, mpWrap(0, dp(16)));
+        row.addView(col1, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(arrow);
+        row.addView(col2, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(row, mpWrap(0, dp(16)));
 
-        // مقياس الانحراف المرئي
         pitchMeter = new PitchMeterView(this);
-        card.addView(pitchMeter, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(36)));
+        card.addView(pitchMeter, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(36)));
 
-        TextView meterLabel = label("← أخفض   ضبط تام   أعلى →", 12, COLOR_SUBTEXT);
-        meterLabel.setGravity(Gravity.CENTER);
-        card.addView(meterLabel, mpWrap(0, dp(6)));
-
+        TextView ml = label("← أخفض   ضبط تام   أعلى →", 12, COLOR_SUBTEXT);
+        ml.setGravity(Gravity.CENTER);
+        card.addView(ml, mpWrap(0, dp(6)));
         return card;
     }
 
@@ -234,11 +221,10 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
         maqamButtons = new TextView[maqams.size()];
-
         int cols = 3;
         for (int row = 0; row * cols < maqams.size(); row++) {
-            LinearLayout rowLayout = new LinearLayout(this);
-            rowLayout.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout rowL = new LinearLayout(this);
+            rowL.setOrientation(LinearLayout.HORIZONTAL);
             for (int col = 0; col < cols && row * cols + col < maqams.size(); col++) {
                 int idx = row * cols + col;
                 Maqam m = maqams.get(idx);
@@ -246,13 +232,13 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
                 final int fi = idx;
                 btn.setOnClickListener(v -> selectMaqam(fi));
                 maqamButtons[idx] = btn;
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
                 lp.setMargins(dp(4), dp(4), dp(4), dp(4));
-                rowLayout.addView(btn, lp);
+                rowL.addView(btn, lp);
             }
-            outer.addView(rowLayout, mpWrap());
+            outer.addView(rowL, mpWrap());
         }
-
         return outer;
     }
 
@@ -260,10 +246,8 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         HorizontalScrollView scroll = new HorizontalScrollView(this);
         scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(dp(4), 0, dp(4), 0);
         scroll.addView(row);
-
         rootButtons = new TextView[MaqamLibrary.ROOT_NAMES_AR.length];
         for (int i = 0; i < MaqamLibrary.ROOT_NAMES_AR.length; i++) {
             TextView btn = rootChip(MaqamLibrary.ROOT_NAMES_AR[i], i == selectedRootIdx);
@@ -275,7 +259,6 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
             lp.setMargins(dp(4), 0, dp(4), 0);
             row.addView(btn, lp);
         }
-
         return scroll;
     }
 
@@ -284,38 +267,23 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
 
-        // حساسية التصحيح
         card.addView(label("قوة التصحيح", 14, COLOR_TEXT));
         SeekBar sbSens = new SeekBar(this);
-        sbSens.setMax(100);
-        sbSens.setProgress(100);
-        sbSens.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean u) { engine.setSensitivity(p / 100.0); }
-            public void onStartTrackingTouch(SeekBar s) {}
-            public void onStopTrackingTouch(SeekBar s) {}
-        });
+        sbSens.setMax(100); sbSens.setProgress(100);
+        sbSens.setOnSeekBarChangeListener(simpleSeek(p -> engine.setSensitivity(p / 100.0)));
         card.addView(sbSens, mpWrap(0, dp(8)));
 
-        // سرعة التصحيح
         card.addView(label("سرعة التصحيح  (بطيء ◄────► سريع)", 14, COLOR_TEXT));
         SeekBar sbSpeed = new SeekBar(this);
-        sbSpeed.setMax(100);
-        sbSpeed.setProgress(30);
-        sbSpeed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean u) {
-                engine.setCorrectionSpeed(0.01 + (p / 100.0) * 0.49);
-            }
-            public void onStartTrackingTouch(SeekBar s) {}
-            public void onStopTrackingTouch(SeekBar s) {}
-        });
+        sbSpeed.setMax(100); sbSpeed.setProgress(30);
+        sbSpeed.setOnSeekBarChangeListener(simpleSeek(p -> engine.setCorrectionSpeed(0.01 + p / 100.0 * 0.49)));
         card.addView(sbSpeed, mpWrap(0, dp(4)));
-
         return card;
     }
 
     private View buildStartButton() {
         btnStart = new TextView(this);
-        btnStart.setText("▶  ابدأ التسجيل");
+        btnStart.setText("▶  ابدأ المعالجة");
         btnStart.setTextSize(20);
         btnStart.setTypeface(Typeface.DEFAULT_BOLD);
         btnStart.setTextColor(Color.BLACK);
@@ -326,18 +294,37 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         return btnStart;
     }
 
+    private View buildRecordButton() {
+        btnRecord = new TextView(this);
+        btnRecord.setText("⏺  ابدأ التسجيل");
+        btnRecord.setTextSize(18);
+        btnRecord.setTypeface(Typeface.DEFAULT_BOLD);
+        btnRecord.setTextColor(Color.WHITE);
+        btnRecord.setGravity(Gravity.CENTER);
+        btnRecord.setPadding(dp(24), dp(16), dp(24), dp(16));
+        btnRecord.setBackgroundColor(COLOR_DIVIDER);
+        btnRecord.setEnabled(false);
+        btnRecord.setOnClickListener(v -> toggleRecording());
+        return btnRecord;
+    }
+
     // ─── منطق التشغيل ────────────────────────────────────────────────
 
     private void toggleEngine() {
         if (engine.isRunning()) {
             engine.stop();
-            btnStart.setText("▶  ابدأ التسجيل");
+            btnStart.setText("▶  ابدأ المعالجة");
             btnStart.setBackgroundColor(COLOR_GOLD);
+            btnStart.setTextColor(Color.BLACK);
             tvStatus.setText("● متوقف");
             tvStatus.setTextColor(COLOR_SUBTEXT);
+            btnRecord.setEnabled(false);
+            btnRecord.setBackgroundColor(COLOR_DIVIDER);
+            btnRecord.setText("⏺  ابدأ التسجيل");
             resetDisplay();
         } else {
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                    != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, PERM_CODE);
             } else {
                 startEngine();
@@ -347,72 +334,222 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
     private void startEngine() {
         if (!engine.start()) {
-            Toast.makeText(this, "تعذّر فتح الميكروفون - تأكد من الإذن", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "تعذّر فتح الميكروفون", Toast.LENGTH_LONG).show();
             return;
         }
-        btnStart.setText("■  إيقاف");
+        btnStart.setText("■  إيقاف المعالجة");
         btnStart.setBackgroundColor(COLOR_RED);
+        btnStart.setTextColor(Color.WHITE);
         tvStatus.setText("● يعمل");
         tvStatus.setTextColor(COLOR_GREEN);
+        btnRecord.setEnabled(true);
+        btnRecord.setBackgroundColor(COLOR_REC);
+    }
+
+    private void toggleRecording() {
+        if (engine.isRecording()) {
+            engine.stopRecording();
+            btnRecord.setText("⏺  ابدأ التسجيل");
+            btnRecord.setBackgroundColor(COLOR_REC);
+            tvStatus.setText("● يعمل");
+            tvStatus.setTextColor(COLOR_GREEN);
+        } else {
+            File dir = getSaveDir();
+            if (engine.startRecording(dir)) {
+                btnRecord.setText("⏹  إيقاف التسجيل");
+                btnRecord.setBackgroundColor(0xFFB71C1C);
+                tvStatus.setText("⏺ يُسجِّل...");
+                tvStatus.setTextColor(COLOR_REC);
+            } else {
+                Toast.makeText(this, "تعذّر بدء التسجيل", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private File getSaveDir() {
+        File ext = getExternalFilesDir(Environment.DIRECTORY_MUSIC);
+        if (ext != null && (ext.exists() || ext.mkdirs())) return ext;
+        File internal = new File(getFilesDir(), "recordings");
+        internal.mkdirs();
+        return internal;
     }
 
     private void selectMaqam(int idx) {
-        if (maqamButtons == null) return;
-        Maqam prev = maqams.get(selectedMaqamIdx);
         maqamButtons[selectedMaqamIdx].setBackgroundColor(COLOR_CARD);
         maqamButtons[selectedMaqamIdx].setTextColor(COLOR_TEXT);
-
         selectedMaqamIdx = idx;
         Maqam m = maqams.get(idx);
         maqamButtons[idx].setBackgroundColor(m.accentColor);
         maqamButtons[idx].setTextColor(Color.BLACK);
-
         engine.setMaqam(m);
-        Toast.makeText(this, "مقام " + m.nameAr + " — " + m.description, Toast.LENGTH_SHORT).show();
     }
 
     private void selectRoot(int idx) {
-        if (rootButtons == null) return;
         rootButtons[selectedRootIdx].setBackgroundColor(COLOR_DIVIDER);
         rootButtons[selectedRootIdx].setTextColor(COLOR_TEXT);
-
         selectedRootIdx = idx;
         rootButtons[idx].setBackgroundColor(COLOR_GOLD);
         rootButtons[idx].setTextColor(Color.BLACK);
-
         engine.setRootHz(MaqamLibrary.ROOT_FREQUENCIES[idx]);
+    }
+
+    // ─── التسجيلات المحفوظة ──────────────────────────────────────────
+
+    private void refreshRecordingsList() {
+        if (recordingsContainer == null) return;
+        recordingsContainer.removeAllViews();
+
+        List<File> files = new ArrayList<>();
+        File[] dirs = { getExternalFilesDir(Environment.DIRECTORY_MUSIC),
+                        new File(getFilesDir(), "recordings") };
+        for (File d : dirs) {
+            if (d == null || !d.exists()) continue;
+            File[] arr = d.listFiles((f, n) -> n.endsWith(".wav"));
+            if (arr != null) files.addAll(Arrays.asList(arr));
+        }
+        Collections.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+
+        if (files.isEmpty()) {
+            recordingsContainer.addView(label("لا توجد تسجيلات بعد", 14, COLOR_SUBTEXT));
+            return;
+        }
+
+        for (File f : files) {
+            recordingsContainer.addView(buildRecordingRow(f));
+        }
+    }
+
+    private View buildRecordingRow(File file) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackgroundColor(COLOR_CARD);
+        row.setPadding(dp(12), dp(12), dp(12), dp(12));
+        LinearLayout.LayoutParams lp = mpWrap(0, dp(4));
+        row.setLayoutParams(lp);
+
+        // معلومات الملف
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+
+        String name = file.getName().replace("AutoTune_", "").replace(".wav", "");
+        // تنسيق: YYYYMMDD_HHmmss → DD/MM/YYYY HH:mm:ss
+        String display = name;
+        try {
+            Date d = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(name);
+            display = new SimpleDateFormat("dd/MM/yyyy  HH:mm:ss", Locale.US).format(d);
+        } catch (Exception ignored) {}
+
+        TextView tvName = label(display, 14, COLOR_TEXT);
+        TextView tvSize = label(formatSize(file.length()) + "  •  WAV", 12, COLOR_SUBTEXT);
+        info.addView(tvName);
+        info.addView(tvSize);
+
+        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        row.addView(info, infoLp);
+
+        // زر تشغيل
+        TextView btnPlay = new TextView(this);
+        btnPlay.setText("▶");
+        btnPlay.setTextSize(20);
+        btnPlay.setTextColor(COLOR_GREEN);
+        btnPlay.setPadding(dp(12), dp(8), dp(12), dp(8));
+        btnPlay.setOnClickListener(v -> playFile(file, btnPlay));
+        row.addView(btnPlay);
+
+        // زر مشاركة
+        TextView btnShare = new TextView(this);
+        btnShare.setText("↑");
+        btnShare.setTextSize(20);
+        btnShare.setTextColor(COLOR_GOLD);
+        btnShare.setPadding(dp(8), dp(8), dp(8), dp(8));
+        btnShare.setOnClickListener(v -> shareFile(file));
+        row.addView(btnShare);
+
+        // زر حذف
+        TextView btnDel = new TextView(this);
+        btnDel.setText("✕");
+        btnDel.setTextSize(18);
+        btnDel.setTextColor(COLOR_RED);
+        btnDel.setPadding(dp(8), dp(8), dp(8), dp(8));
+        btnDel.setOnClickListener(v -> {
+            file.delete();
+            refreshRecordingsList();
+        });
+        row.addView(btnDel);
+
+        return row;
+    }
+
+    // ─── تشغيل ومشاركة ───────────────────────────────────────────────
+
+    private MediaPlayer currentPlayer;
+
+    private void playFile(File file, TextView btn) {
+        if (currentPlayer != null) {
+            currentPlayer.stop();
+            currentPlayer.release();
+            currentPlayer = null;
+            btn.setText("▶");
+            return;
+        }
+        try {
+            currentPlayer = new MediaPlayer();
+            currentPlayer.setDataSource(file.getAbsolutePath());
+            currentPlayer.prepare();
+            currentPlayer.start();
+            btn.setText("■");
+            currentPlayer.setOnCompletionListener(mp -> {
+                mp.release();
+                currentPlayer = null;
+                uiHandler.post(() -> btn.setText("▶"));
+            });
+        } catch (Exception e) {
+            Toast.makeText(this, "تعذّر تشغيل الملف", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void shareFile(File file) {
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("audio/wav");
+        intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file));
+        intent.putExtra(Intent.EXTRA_SUBJECT, "تسجيل من أوتوتيون عربي");
+        startActivity(Intent.createChooser(intent, "مشاركة التسجيل"));
     }
 
     // ─── استجابة المحرك ──────────────────────────────────────────────
 
     @Override
-    public void onPitchDetected(double detectedHz, double targetHz, double deviationCents, String noteName) {
-        // يُستدعى من الخيط الرئيسي (Handler في AudioEngine)
+    public void onPitchDetected(double detectedHz, double targetHz,
+                                double deviationCents, String noteName) {
         tvDetectedNote.setText(noteName.isEmpty() ? "—" : noteName);
         tvDetectedHz.setText(String.format("%.1f هرتز", detectedHz));
         tvTargetNote.setText(noteName.isEmpty() ? "—" : noteName + " ✓");
 
-        double absDev = Math.abs(deviationCents);
-        String devStr = String.format("%+.1f سنت", deviationCents);
-        tvDeviationCents.setText(devStr);
-
-        // لون الانحراف: أخضر إذا كان < 15 سنت، أصفر < 30، أحمر بعد ذلك
-        int devColor = absDev < 15 ? COLOR_GREEN : (absDev < 35 ? 0xFFFFD600 : COLOR_RED);
-        tvDeviationCents.setTextColor(devColor);
-        tvTargetNote.setTextColor(devColor);
-
-        // تحديث مقياس الانحراف
+        double abs = Math.abs(deviationCents);
+        int col = abs < 15 ? COLOR_GREEN : (abs < 35 ? 0xFFFFD600 : COLOR_RED);
+        tvDeviationCents.setText(String.format("%+.1f سنت", deviationCents));
+        tvDeviationCents.setTextColor(col);
+        tvTargetNote.setTextColor(col);
         pitchMeter.setDeviation((float) deviationCents);
     }
 
     @Override
-    public void onSilence() {
-        resetDisplay();
+    public void onSilence() { resetDisplay(); }
+
+    @Override
+    public void onEngineError(String msg) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
 
     @Override
-    public void onEngineError(String message) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    public void onRecordingSaved(File file, long durationMs) {
+        long secs = durationMs / 1000;
+        String msg = "✓ تم الحفظ: " + file.getName()
+                + "\nالمدة: " + (secs / 60) + ":" + String.format("%02d", secs % 60);
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+        refreshRecordingsList();
     }
 
     private void resetDisplay() {
@@ -425,13 +562,13 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         pitchMeter.setDeviation(0);
     }
 
-    // ─── مقياس الانحراف المرئي ────────────────────────────────────────
+    // ─── مقياس الانحراف ──────────────────────────────────────────────
 
     private class PitchMeterView extends View {
-        private final Paint paintBg  = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint paintBar = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint paintBg     = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint paintBar    = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint paintCenter = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private float deviation = 0;  // بالسنت (-100 إلى +100)
+        private float deviation = 0;
 
         PitchMeterView(android.content.Context ctx) {
             super(ctx);
@@ -441,39 +578,27 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         }
 
         void setDeviation(float dev) {
-            float clamped = Math.max(-100f, Math.min(100f, dev));
-            if (Math.abs(clamped - deviation) > 0.5f) {
-                deviation = clamped;
-                invalidate();
-            }
+            float c = Math.max(-100f, Math.min(100f, dev));
+            if (Math.abs(c - deviation) > 0.5f) { deviation = c; invalidate(); }
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
-            float w = getWidth(), h = getHeight();
-            float midX = w / 2f;
-            float radius = dp(6);
-
-            // خلفية مستديرة الأطراف
-            canvas.drawRoundRect(new RectF(0, 0, w, h), radius, radius, paintBg);
-
-            // شريط الانحراف (يمتد من المنتصف)
-            float barEnd = midX + (deviation / 100f) * (w / 2f - dp(4));
-            int barColor = Math.abs(deviation) < 15 ? COLOR_GREEN : (Math.abs(deviation) < 35 ? 0xFFFFD600 : COLOR_RED);
-            paintBar.setShader(new LinearGradient(midX, 0, barEnd, 0,
-                    new int[]{barColor & 0x80FFFFFF, barColor}, null, Shader.TileMode.CLAMP));
-            if (barEnd > midX) {
-                canvas.drawRoundRect(new RectF(midX, dp(2), barEnd, h - dp(2)), dp(3), dp(3), paintBar);
-            } else {
-                canvas.drawRoundRect(new RectF(barEnd, dp(2), midX, h - dp(2)), dp(3), dp(3), paintBar);
-            }
-
-            // خط المنتصف (الضبط التام)
-            canvas.drawLine(midX, dp(2), midX, h - dp(2), paintCenter);
+            float w = getWidth(), h = getHeight(), mid = w / 2f;
+            canvas.drawRoundRect(new RectF(0, 0, w, h), dp(6), dp(6), paintBg);
+            float end = mid + (deviation / 100f) * (w / 2f - dp(4));
+            int col = Math.abs(deviation) < 15 ? COLOR_GREEN
+                    : (Math.abs(deviation) < 35 ? 0xFFFFD600 : COLOR_RED);
+            paintBar.setShader(new LinearGradient(mid, 0, end, 0,
+                    new int[]{col & 0x80FFFFFF, col}, null, Shader.TileMode.CLAMP));
+            RectF bar = end > mid ? new RectF(mid, dp(2), end, h - dp(2))
+                                  : new RectF(end, dp(2), mid, h - dp(2));
+            canvas.drawRoundRect(bar, dp(3), dp(3), paintBar);
+            canvas.drawLine(mid, dp(2), mid, h - dp(2), paintCenter);
         }
     }
 
-    // ─── مساعدات بناء الواجهة ────────────────────────────────────────
+    // ─── مساعدات ─────────────────────────────────────────────────────
 
     private LinearLayout card() {
         LinearLayout v = new LinearLayout(this);
@@ -506,25 +631,25 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         return tv;
     }
 
-    private TextView maqamChip(String name, boolean selected, int accent) {
+    private TextView maqamChip(String name, boolean sel, int accent) {
         TextView tv = new TextView(this);
         tv.setText(name);
         tv.setTextSize(15);
         tv.setGravity(Gravity.CENTER);
         tv.setPadding(dp(8), dp(12), dp(8), dp(12));
-        tv.setBackgroundColor(selected ? accent : COLOR_CARD);
-        tv.setTextColor(selected ? Color.BLACK : COLOR_TEXT);
+        tv.setBackgroundColor(sel ? accent : COLOR_CARD);
+        tv.setTextColor(sel ? Color.BLACK : COLOR_TEXT);
         return tv;
     }
 
-    private TextView rootChip(String name, boolean selected) {
+    private TextView rootChip(String name, boolean sel) {
         TextView tv = new TextView(this);
         tv.setText(name);
         tv.setTextSize(14);
         tv.setGravity(Gravity.CENTER);
         tv.setPadding(dp(12), dp(10), dp(12), dp(10));
-        tv.setBackgroundColor(selected ? COLOR_GOLD : COLOR_DIVIDER);
-        tv.setTextColor(selected ? Color.BLACK : COLOR_TEXT);
+        tv.setBackgroundColor(sel ? COLOR_GOLD : COLOR_DIVIDER);
+        tv.setTextColor(sel ? Color.BLACK : COLOR_TEXT);
         return tv;
     }
 
@@ -533,10 +658,24 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
-    private LinearLayout.LayoutParams mpWrap(int hMargin, int topMargin) {
+    private LinearLayout.LayoutParams mpWrap(int h, int top) {
         LinearLayout.LayoutParams lp = mpWrap();
-        lp.setMargins(hMargin, topMargin, hMargin, 0);
+        lp.setMargins(h, top, h, 0);
         return lp;
+    }
+
+    private SeekBar.OnSeekBarChangeListener simpleSeek(java.util.function.IntConsumer onChange) {
+        return new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean u) { onChange.accept(p); }
+            public void onStartTrackingTouch(SeekBar s) {}
+            public void onStopTrackingTouch(SeekBar s) {}
+        };
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024f);
+        return String.format("%.1f MB", bytes / (1024f * 1024f));
     }
 
     private int dp(int v) {
