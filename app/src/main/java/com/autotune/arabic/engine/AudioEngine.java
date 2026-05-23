@@ -83,7 +83,7 @@ public class AudioEngine {
         int recBuf = Math.max(minBuf, PROCESS_BUFFER * 4);
 
         recorder = new AudioRecord(
-                MediaRecorder.AudioSource.VOICE_PERFORMANCE,
+                MediaRecorder.AudioSource.MIC,
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
