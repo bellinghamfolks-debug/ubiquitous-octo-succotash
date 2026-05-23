@@ -12,7 +12,6 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.media.MediaPlayer;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -511,11 +510,11 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     }
 
     private void shareFile(File file) {
-        Intent intent = new Intent(Intent.ACTION_SEND);
-        intent.setType("audio/wav");
-        intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file));
-        intent.putExtra(Intent.EXTRA_SUBJECT, "تسجيل من أوتوتيون عربي");
-        startActivity(Intent.createChooser(intent, "مشاركة التسجيل"));
+        // نعرض مسار الملف — Uri.fromFile يُلقي FileUriExposedException في Android 7+
+        // بدون FileProvider لا يمكن المشاركة المباشرة، لذا نُظهر المسار للمستخدم
+        Toast.makeText(this,
+                "مسار الملف:\n" + file.getAbsolutePath(),
+                Toast.LENGTH_LONG).show();
     }
 
     // ─── استجابة المحرك ──────────────────────────────────────────────
@@ -664,9 +663,12 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         return lp;
     }
 
-    private SeekBar.OnSeekBarChangeListener simpleSeek(java.util.function.IntConsumer onChange) {
+    // واجهة بديلة لـ java.util.function.IntConsumer (غير متاحة في Android < API 24)
+    interface SeekAction { void onValue(int value); }
+
+    private SeekBar.OnSeekBarChangeListener simpleSeek(final SeekAction onChange) {
         return new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean u) { onChange.accept(p); }
+            public void onProgressChanged(SeekBar s, int p, boolean u) { onChange.onValue(p); }
             public void onStartTrackingTouch(SeekBar s) {}
             public void onStopTrackingTouch(SeekBar s) {}
         };
