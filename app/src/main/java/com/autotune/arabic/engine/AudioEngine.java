@@ -97,7 +97,11 @@ public class AudioEngine {
         if (saved != null && listener != null) {
             long dur = System.currentTimeMillis() - recordingStartMs;
             android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
-            h.post(() -> { if (listener != null) listener.onRecordingSaved(saved, dur); });
+            final Listener snap = listener;
+            final File fSaved = saved;
+            h.post(new Runnable() {
+                public void run() { if (snap != null) snap.onRecordingSaved(fSaved, dur); }
+            });
         }
     }
 
@@ -181,15 +185,24 @@ public class AudioEngine {
                     String name = activeMaqam.nearestNoteName(detectedHz, rootHz);
                     final double fd = detectedHz, ft = activeMaqam.nearestNote(detectedHz, rootHz), fdev = dev;
                     final String fn = name;
+                    final Listener snap = listener;
                     new android.os.Handler(android.os.Looper.getMainLooper())
-                            .post(() -> { if (listener != null) listener.onPitchDetected(fd, ft, fdev, fn); });
+                            .post(new Runnable() {
+                                public void run() {
+                                    if (snap != null) snap.onPitchDetected(fd, ft, fdev, fn);
+                                }
+                            });
                 }
             } else if (detectedHz <= 0) {
                 currentRatio = 1.0;
                 shifter.reset();
-                if (listener != null)
+                if (listener != null) {
+                    final Listener snap = listener;
                     new android.os.Handler(android.os.Looper.getMainLooper())
-                            .post(() -> { if (listener != null) listener.onSilence(); });
+                            .post(new Runnable() {
+                                public void run() { if (snap != null) snap.onSilence(); }
+                            });
+                }
             }
 
             shifter.process(inputF, outputF, ratio);

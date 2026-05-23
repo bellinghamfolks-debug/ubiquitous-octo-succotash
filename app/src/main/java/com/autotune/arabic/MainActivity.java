@@ -5,7 +5,6 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -15,6 +14,7 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.media.MediaPlayer;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -23,6 +23,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -34,18 +35,23 @@ import com.autotune.arabic.engine.AudioEngine;
 import com.autotune.arabic.maqam.Maqam;
 import com.autotune.arabic.maqam.MaqamLibrary;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FilenameFilter;
+import java.io.FileReader;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity implements AudioEngine.Listener {
 
-    // ─── ألوان ──────────────────────────────────────────────────────
     private static final int COLOR_BG      = 0xFF0D0D14;
     private static final int COLOR_CARD    = 0xFF1A1A2E;
     private static final int COLOR_GOLD    = 0xFFD4A017;
@@ -54,17 +60,15 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     private static final int COLOR_TEXT    = 0xFFE8E8F0;
     private static final int COLOR_SUBTEXT = 0xFF8888AA;
     private static final int COLOR_DIVIDER = 0xFF2A2A45;
-    private static final int COLOR_REC     = 0xFFFF1744;  // أحمر التسجيل
+    private static final int COLOR_REC     = 0xFFFF1744;
 
     private static final int PERM_CODE = 101;
 
-    // ─── المحرك ─────────────────────────────────────────────────────
     private AudioEngine engine;
     private List<Maqam> maqams;
     private int selectedMaqamIdx = 0;
     private int selectedRootIdx  = 2;
 
-    // ─── عناصر الواجهة ──────────────────────────────────────────────
     private PitchMeterView pitchMeter;
     private TextView       tvDetectedNote, tvDetectedHz, tvTargetNote, tvDeviationCents;
     private TextView       tvStatus;
@@ -75,13 +79,10 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
-    // ─── دورة الحياة ────────────────────────────────────────────────
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // CrashReporter مُثبَّت مسبقاً في AutoTuneApp — نُعيد التثبيت احتياطاً
         CrashReporter.install(this);
-
         try {
             getWindow().getDecorView().setBackgroundColor(COLOR_BG);
             maqams = MaqamLibrary.buildAll();
@@ -95,80 +96,69 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         }
     }
 
-    /** يعرض الخطأ على الشاشة مباشرة بدون أي كود معقد */
-    private void showStartupError(Throwable t) {
-        // حفظ في ملف
+    private void showStartupError(final Throwable t) {
         try {
-            java.io.File dir = new java.io.File(getFilesDir(), "crashes");
+            File dir = new File(getFilesDir(), "crashes");
             dir.mkdirs();
-            java.io.File f = new java.io.File(dir, "startup_error.txt");
-            java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(f));
-            pw.println("Android: " + android.os.Build.VERSION.RELEASE
-                    + " API " + android.os.Build.VERSION.SDK_INT);
-            pw.println("Device: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
+            PrintWriter pw = new PrintWriter(new File(dir, "startup_error.txt"));
+            pw.println("Android: " + Build.VERSION.RELEASE + " API " + Build.VERSION.SDK_INT);
+            pw.println("Device: " + Build.MANUFACTURER + " " + Build.MODEL);
             t.printStackTrace(pw);
             pw.close();
         } catch (Exception ignored) {}
 
-        // عرض الخطأ كنص على الشاشة حتى يتمكن المستخدم من قراءته
-        android.widget.ScrollView sv = new android.widget.ScrollView(this);
-        sv.setBackgroundColor(0xFF0D0D14);
-        android.widget.LinearLayout ll = new android.widget.LinearLayout(this);
-        ll.setOrientation(android.widget.LinearLayout.VERTICAL);
+        ScrollView sv = new ScrollView(this);
+        sv.setBackgroundColor(COLOR_BG);
+        LinearLayout ll = new LinearLayout(this);
+        ll.setOrientation(LinearLayout.VERTICAL);
         ll.setPadding(30, 60, 30, 30);
         sv.addView(ll);
 
-        android.widget.TextView title = new android.widget.TextView(this);
+        TextView title = new TextView(this);
         title.setText("⚠ خطأ عند البدء — خذ لقطة شاشة");
-        title.setTextColor(0xFFFF1744);
+        title.setTextColor(COLOR_RED);
         title.setTextSize(18);
-        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
         ll.addView(title);
 
-        android.widget.TextView info = new android.widget.TextView(this);
-        info.setText("Android " + android.os.Build.VERSION.RELEASE
-                + " | " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
-        info.setTextColor(0xFF8888AA);
+        TextView info = new TextView(this);
+        info.setText("Android " + Build.VERSION.RELEASE + " API " + Build.VERSION.SDK_INT
+                + " | " + Build.MANUFACTURER + " " + Build.MODEL);
+        info.setTextColor(COLOR_SUBTEXT);
         info.setTextSize(13);
         info.setPadding(0, 12, 0, 12);
         ll.addView(info);
 
-        // رسالة الخطأ الكاملة
-        java.io.StringWriter sw = new java.io.StringWriter();
-        t.printStackTrace(new java.io.PrintWriter(sw));
-        String trace = sw.toString();
+        StringWriter sw = new StringWriter();
+        t.printStackTrace(new PrintWriter(sw));
+        final String trace = "Android " + Build.VERSION.RELEASE + " API "
+                + Build.VERSION.SDK_INT + " | " + Build.MANUFACTURER + " " + Build.MODEL
+                + "\n\n" + sw.toString();
 
-        android.widget.TextView tv = new android.widget.TextView(this);
+        TextView tv = new TextView(this);
         tv.setText(trace);
         tv.setTextColor(0xFFFFCCCC);
         tv.setTextSize(11);
-        tv.setTypeface(android.graphics.Typeface.MONOSPACE);
+        tv.setTypeface(Typeface.MONOSPACE);
         ll.addView(tv);
 
-        // زر نسخ
-        android.widget.TextView btnCopy = new android.widget.TextView(this);
+        TextView btnCopy = new TextView(this);
         btnCopy.setText("نسخ النص كاملاً");
-        btnCopy.setTextColor(android.graphics.Color.BLACK);
+        btnCopy.setTextColor(Color.BLACK);
         btnCopy.setTextSize(16);
-        btnCopy.setGravity(android.view.Gravity.CENTER);
+        btnCopy.setGravity(Gravity.CENTER);
         btnCopy.setPadding(20, 20, 20, 20);
-        btnCopy.setBackgroundColor(0xFFD4A017);
-        final String finalTrace = "Android " + android.os.Build.VERSION.RELEASE
-                + " API " + android.os.Build.VERSION.SDK_INT
-                + " | " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
-                + "\n\n" + trace;
-        btnCopy.setOnClickListener(new android.view.View.OnClickListener() {
-            public void onClick(android.view.View v) {
-                android.content.ClipboardManager cm = (android.content.ClipboardManager)
-                        getSystemService(android.content.Context.CLIPBOARD_SERVICE);
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("err", finalTrace));
-                android.widget.Toast.makeText(MainActivity.this,
-                        "تم النسخ — الصقه هنا في المحادثة", android.widget.Toast.LENGTH_LONG).show();
+        btnCopy.setBackgroundColor(COLOR_GOLD);
+        btnCopy.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(ClipData.newPlainText("err", trace));
+                Toast.makeText(MainActivity.this, "تم النسخ — الصقه هنا في المحادثة",
+                        Toast.LENGTH_LONG).show();
             }
         });
-        android.widget.LinearLayout.LayoutParams btnLp = new android.widget.LinearLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         btnLp.setMargins(0, 24, 0, 0);
         ll.addView(btnCopy, btnLp);
 
@@ -178,7 +168,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        engine.stop();
+        if (engine != null) engine.stop();
     }
 
     @Override
@@ -192,6 +182,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     }
 
     // ─── بناء الواجهة ────────────────────────────────────────────────
+
     private void buildUi() {
         ScrollView root = new ScrollView(this);
         root.setBackgroundColor(COLOR_BG);
@@ -215,27 +206,24 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         chkBypass.setText("وضع التمرير المباشر (Bypass)");
         chkBypass.setTextColor(COLOR_SUBTEXT);
         chkBypass.setTextSize(15);
-        chkBypass.setOnCheckedChangeListener((b, c) -> engine.setBypass(c));
+        chkBypass.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton b, boolean c) { engine.setBypass(c); }
+        });
         page.addView(chkBypass, mpWrap(0, dp(12)));
 
-        // ─── أزرار التشغيل والتسجيل ─────────────────────────────────
         page.addView(buildStartButton(), mpWrap(dp(8), dp(4)));
         page.addView(buildRecordButton(), mpWrap(dp(8), dp(8)));
 
-        // ─── قائمة التسجيلات المحفوظة ────────────────────────────────
         page.addView(sectionTitle("التسجيلات المحفوظة"));
-
         recordingsContainer = new LinearLayout(this);
         recordingsContainer.setOrientation(LinearLayout.VERTICAL);
         page.addView(recordingsContainer, mpWrap(0, dp(4)));
-
         refreshRecordingsList();
 
-        TextView note = label("ملف: محفوظ في مجلد Music في الجهاز", 12, COLOR_SUBTEXT);
+        TextView note = label("محفوظ في مجلد Music في الجهاز", 12, COLOR_SUBTEXT);
         note.setGravity(Gravity.CENTER);
         page.addView(note, mpWrap(0, dp(12)));
 
-        // ─── تقارير الأعطال ──────────────────────────────────────────
         File[] crashes = CrashReporter.listReports(this);
         if (crashes.length > 0) {
             page.addView(sectionTitle("⚠ تقارير أعطال محفوظة"));
@@ -324,11 +312,12 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
             LinearLayout rowL = new LinearLayout(this);
             rowL.setOrientation(LinearLayout.HORIZONTAL);
             for (int col = 0; col < cols && row * cols + col < maqams.size(); col++) {
-                int idx = row * cols + col;
+                final int idx = row * cols + col;
                 Maqam m = maqams.get(idx);
                 TextView btn = maqamChip(m.nameAr, idx == selectedMaqamIdx, m.accentColor);
-                final int fi = idx;
-                btn.setOnClickListener(v -> selectMaqam(fi));
+                btn.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) { selectMaqam(idx); }
+                });
                 maqamButtons[idx] = btn;
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
@@ -348,9 +337,11 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         scroll.addView(row);
         rootButtons = new TextView[MaqamLibrary.ROOT_NAMES_AR.length];
         for (int i = 0; i < MaqamLibrary.ROOT_NAMES_AR.length; i++) {
-            TextView btn = rootChip(MaqamLibrary.ROOT_NAMES_AR[i], i == selectedRootIdx);
             final int fi = i;
-            btn.setOnClickListener(v -> selectRoot(fi));
+            TextView btn = rootChip(MaqamLibrary.ROOT_NAMES_AR[i], i == selectedRootIdx);
+            btn.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { selectRoot(fi); }
+            });
             rootButtons[i] = btn;
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -368,13 +359,17 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         card.addView(label("قوة التصحيح", 14, COLOR_TEXT));
         SeekBar sbSens = new SeekBar(this);
         sbSens.setMax(100); sbSens.setProgress(100);
-        sbSens.setOnSeekBarChangeListener(simpleSeek(p -> engine.setSensitivity(p / 100.0)));
+        sbSens.setOnSeekBarChangeListener(simpleSeek(new SeekAction() {
+            public void onValue(int p) { engine.setSensitivity(p / 100.0); }
+        }));
         card.addView(sbSens, mpWrap(0, dp(8)));
 
         card.addView(label("سرعة التصحيح  (بطيء ◄────► سريع)", 14, COLOR_TEXT));
         SeekBar sbSpeed = new SeekBar(this);
         sbSpeed.setMax(100); sbSpeed.setProgress(30);
-        sbSpeed.setOnSeekBarChangeListener(simpleSeek(p -> engine.setCorrectionSpeed(0.01 + p / 100.0 * 0.49)));
+        sbSpeed.setOnSeekBarChangeListener(simpleSeek(new SeekAction() {
+            public void onValue(int p) { engine.setCorrectionSpeed(0.01 + p / 100.0 * 0.49); }
+        }));
         card.addView(sbSpeed, mpWrap(0, dp(4)));
         return card;
     }
@@ -388,7 +383,9 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         btnStart.setGravity(Gravity.CENTER);
         btnStart.setPadding(dp(24), dp(18), dp(24), dp(18));
         btnStart.setBackgroundColor(COLOR_GOLD);
-        btnStart.setOnClickListener(v -> toggleEngine());
+        btnStart.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { toggleEngine(); }
+        });
         return btnStart;
     }
 
@@ -402,7 +399,9 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         btnRecord.setPadding(dp(24), dp(16), dp(24), dp(16));
         btnRecord.setBackgroundColor(COLOR_DIVIDER);
         btnRecord.setEnabled(false);
-        btnRecord.setOnClickListener(v -> toggleRecording());
+        btnRecord.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { toggleRecording(); }
+        });
         return btnRecord;
     }
 
@@ -497,97 +496,93 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         if (recordingsContainer == null) return;
         recordingsContainer.removeAllViews();
 
-        List<File> files = new ArrayList<>();
+        List<File> files = new ArrayList<File>();
         File[] dirs = { getExternalFilesDir(Environment.DIRECTORY_MUSIC),
                         new File(getFilesDir(), "recordings") };
         for (File d : dirs) {
             if (d == null || !d.exists()) continue;
-            File[] arr = d.listFiles((f, n) -> n.endsWith(".wav"));
+            File[] arr = d.listFiles(new FilenameFilter() {
+                public boolean accept(File dir, String name) { return name.endsWith(".wav"); }
+            });
             if (arr != null) files.addAll(Arrays.asList(arr));
         }
-        Collections.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        Collections.sort(files, new Comparator<File>() {
+            public int compare(File a, File b) {
+                return Long.compare(b.lastModified(), a.lastModified());
+            }
+        });
 
         if (files.isEmpty()) {
             recordingsContainer.addView(label("لا توجد تسجيلات بعد", 14, COLOR_SUBTEXT));
             return;
         }
-
         for (File f : files) {
             recordingsContainer.addView(buildRecordingRow(f));
         }
     }
 
-    private View buildRecordingRow(File file) {
+    private View buildRecordingRow(final File file) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setBackgroundColor(COLOR_CARD);
         row.setPadding(dp(12), dp(12), dp(12), dp(12));
-        LinearLayout.LayoutParams lp = mpWrap(0, dp(4));
-        row.setLayoutParams(lp);
+        row.setLayoutParams(mpWrap(0, dp(4)));
 
-        // معلومات الملف
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
-
         String name = file.getName().replace("AutoTune_", "").replace(".wav", "");
-        // تنسيق: YYYYMMDD_HHmmss → DD/MM/YYYY HH:mm:ss
         String display = name;
         try {
             Date d = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(name);
             display = new SimpleDateFormat("dd/MM/yyyy  HH:mm:ss", Locale.US).format(d);
         } catch (Exception ignored) {}
+        info.addView(label(display, 14, COLOR_TEXT));
+        info.addView(label(formatSize(file.length()) + "  •  WAV", 12, COLOR_SUBTEXT));
+        row.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        TextView tvName = label(display, 14, COLOR_TEXT);
-        TextView tvSize = label(formatSize(file.length()) + "  •  WAV", 12, COLOR_SUBTEXT);
-        info.addView(tvName);
-        info.addView(tvSize);
-
-        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        row.addView(info, infoLp);
-
-        // زر تشغيل
-        TextView btnPlay = new TextView(this);
+        final TextView btnPlay = new TextView(this);
         btnPlay.setText("▶");
         btnPlay.setTextSize(20);
         btnPlay.setTextColor(COLOR_GREEN);
         btnPlay.setPadding(dp(12), dp(8), dp(12), dp(8));
-        btnPlay.setOnClickListener(v -> playFile(file, btnPlay));
+        btnPlay.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { playFile(file, btnPlay); }
+        });
         row.addView(btnPlay);
 
-        // زر مشاركة
         TextView btnShare = new TextView(this);
         btnShare.setText("↑");
         btnShare.setTextSize(20);
         btnShare.setTextColor(COLOR_GOLD);
         btnShare.setPadding(dp(8), dp(8), dp(8), dp(8));
-        btnShare.setOnClickListener(v -> shareFile(file));
+        btnShare.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { shareFile(file); }
+        });
         row.addView(btnShare);
 
-        // زر حذف
         TextView btnDel = new TextView(this);
         btnDel.setText("✕");
         btnDel.setTextSize(18);
         btnDel.setTextColor(COLOR_RED);
         btnDel.setPadding(dp(8), dp(8), dp(8), dp(8));
-        btnDel.setOnClickListener(v -> {
-            file.delete();
-            refreshRecordingsList();
+        btnDel.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { file.delete(); refreshRecordingsList(); }
         });
         row.addView(btnDel);
 
         return row;
     }
 
-    private View buildCrashRow(File crash) {
-        LinearLayout row = new LinearLayout(this);
+    private View buildCrashRow(final File crash) {
+        final LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setBackgroundColor(0xFF2A1020);
         row.setPadding(dp(12), dp(12), dp(12), dp(12));
 
-        String name = crash.getName().replace("crash_", "").replace(".txt", "");
+        String name = crash.getName().replace("crash_", "").replace(".txt", "")
+                                     .replace("startup_error", "خطأ بدء");
         String display = name;
         try {
             Date d = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(name);
@@ -598,44 +593,45 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         info.setOrientation(LinearLayout.VERTICAL);
         info.addView(label("⚠ عطل: " + display, 13, COLOR_RED));
         info.addView(label(formatSize(crash.length()), 11, COLOR_SUBTEXT));
-        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        row.addView(info, infoLp);
+        row.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        // زر نسخ النص كاملاً إلى الحافظة
         TextView btnCopy = new TextView(this);
         btnCopy.setText("نسخ");
         btnCopy.setTextSize(14);
         btnCopy.setTextColor(COLOR_GOLD);
         btnCopy.setPadding(dp(10), dp(8), dp(10), dp(8));
-        btnCopy.setOnClickListener(v -> {
-            try {
-                java.io.BufferedReader br = new java.io.BufferedReader(
-                        new java.io.FileReader(crash));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = br.readLine()) != null) { sb.append(line).append('\n'); }
-                br.close();
-                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                cm.setPrimaryClip(ClipData.newPlainText("crash", sb.toString()));
-                Toast.makeText(this, "✓ تم النسخ — الصقه في أي تطبيق وأرسله",
-                        Toast.LENGTH_LONG).show();
-            } catch (Exception e) {
-                Toast.makeText(this, "تعذّر قراءة الملف", Toast.LENGTH_SHORT).show();
+        btnCopy.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                try {
+                    BufferedReader br = new BufferedReader(new FileReader(crash));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) { sb.append(line).append('\n'); }
+                    br.close();
+                    ClipboardManager cm = (ClipboardManager)
+                            getSystemService(Context.CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(ClipData.newPlainText("crash", sb.toString()));
+                    Toast.makeText(MainActivity.this, "✓ تم النسخ — الصقه هنا في المحادثة",
+                            Toast.LENGTH_LONG).show();
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "تعذّر قراءة الملف",
+                            Toast.LENGTH_SHORT).show();
+                }
             }
         });
         row.addView(btnCopy);
 
-        // زر حذف
         TextView btnDel = new TextView(this);
         btnDel.setText("✕");
         btnDel.setTextSize(18);
         btnDel.setTextColor(COLOR_RED);
         btnDel.setPadding(dp(8), dp(8), dp(8), dp(8));
-        btnDel.setOnClickListener(v -> {
-            crash.delete();
-            if (row.getParent() instanceof ViewGroup)
-                ((ViewGroup) row.getParent()).removeView(row);
+        btnDel.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                crash.delete();
+                if (row.getParent() instanceof ViewGroup)
+                    ((ViewGroup) row.getParent()).removeView(row);
+            }
         });
         row.addView(btnDel);
 
@@ -646,7 +642,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
     private MediaPlayer currentPlayer;
 
-    private void playFile(File file, TextView btn) {
+    private void playFile(final File file, final TextView btn) {
         if (currentPlayer != null) {
             currentPlayer.stop();
             currentPlayer.release();
@@ -660,10 +656,14 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
             currentPlayer.prepare();
             currentPlayer.start();
             btn.setText("■");
-            currentPlayer.setOnCompletionListener(mp -> {
-                mp.release();
-                currentPlayer = null;
-                uiHandler.post(() -> btn.setText("▶"));
+            currentPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+                public void onCompletion(MediaPlayer mp) {
+                    mp.release();
+                    currentPlayer = null;
+                    uiHandler.post(new Runnable() {
+                        public void run() { btn.setText("▶"); }
+                    });
+                }
             });
         } catch (Exception e) {
             Toast.makeText(this, "تعذّر تشغيل الملف", Toast.LENGTH_SHORT).show();
@@ -671,10 +671,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     }
 
     private void shareFile(File file) {
-        // نعرض مسار الملف — Uri.fromFile يُلقي FileUriExposedException في Android 7+
-        // بدون FileProvider لا يمكن المشاركة المباشرة، لذا نُظهر المسار للمستخدم
-        Toast.makeText(this,
-                "مسار الملف:\n" + file.getAbsolutePath(),
+        Toast.makeText(this, "مسار الملف:\n" + file.getAbsolutePath(),
                 Toast.LENGTH_LONG).show();
     }
 
@@ -686,7 +683,6 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         tvDetectedNote.setText(noteName.isEmpty() ? "—" : noteName);
         tvDetectedHz.setText(String.format("%.1f هرتز", detectedHz));
         tvTargetNote.setText(noteName.isEmpty() ? "—" : noteName + " ✓");
-
         double abs = Math.abs(deviationCents);
         int col = abs < 15 ? COLOR_GREEN : (abs < 35 ? 0xFFFFD600 : COLOR_RED);
         tvDeviationCents.setText(String.format("%+.1f سنت", deviationCents));
@@ -695,8 +691,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         pitchMeter.setDeviation((float) deviationCents);
     }
 
-    @Override
-    public void onSilence() { resetDisplay(); }
+    @Override public void onSilence() { resetDisplay(); }
 
     @Override
     public void onEngineError(String msg) {
@@ -706,9 +701,9 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     @Override
     public void onRecordingSaved(File file, long durationMs) {
         long secs = durationMs / 1000;
-        String msg = "✓ تم الحفظ: " + file.getName()
-                + "\nالمدة: " + (secs / 60) + ":" + String.format("%02d", secs % 60);
-        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "✓ تم الحفظ: " + file.getName()
+                + "\nالمدة: " + (secs / 60) + ":" + String.format("%02d", secs % 60),
+                Toast.LENGTH_LONG).show();
         refreshRecordingsList();
     }
 
@@ -759,6 +754,16 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     }
 
     // ─── مساعدات ─────────────────────────────────────────────────────
+
+    interface SeekAction { void onValue(int value); }
+
+    private SeekBar.OnSeekBarChangeListener simpleSeek(final SeekAction onChange) {
+        return new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean u) { onChange.onValue(p); }
+            public void onStartTrackingTouch(SeekBar s) {}
+            public void onStopTrackingTouch(SeekBar s) {}
+        };
+    }
 
     private LinearLayout card() {
         LinearLayout v = new LinearLayout(this);
@@ -822,17 +827,6 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         LinearLayout.LayoutParams lp = mpWrap();
         lp.setMargins(h, top, h, 0);
         return lp;
-    }
-
-    // واجهة بديلة لـ java.util.function.IntConsumer (غير متاحة في Android < API 24)
-    interface SeekAction { void onValue(int value); }
-
-    private SeekBar.OnSeekBarChangeListener simpleSeek(final SeekAction onChange) {
-        return new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean u) { onChange.onValue(p); }
-            public void onStartTrackingTouch(SeekBar s) {}
-            public void onStopTrackingTouch(SeekBar s) {}
-        };
     }
 
     private String formatSize(long bytes) {

@@ -31,9 +31,13 @@ public class CrashReporter implements Thread.UncaughtExceptionHandler {
     public static File[] listReports(Context ctx) {
         File dir = new File(ctx.getFilesDir(), "crashes");
         if (!dir.exists()) return new File[0];
-        File[] files = dir.listFiles((d, n) -> n.endsWith(".txt"));
+        File[] files = dir.listFiles(new java.io.FilenameFilter() {
+            public boolean accept(File d, String n) { return n.endsWith(".txt"); }
+        });
         if (files == null) return new File[0];
-        java.util.Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        java.util.Arrays.sort(files, new java.util.Comparator<File>() {
+            public int compare(File a, File b) { return Long.compare(b.lastModified(), a.lastModified()); }
+        });
         return files;
     }
 
