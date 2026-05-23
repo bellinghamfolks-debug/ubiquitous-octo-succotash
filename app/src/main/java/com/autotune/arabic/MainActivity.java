@@ -2,6 +2,9 @@ package com.autotune.arabic;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
@@ -76,6 +79,9 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // تثبيت كاشف الأعطال أولاً قبل أي شيء
+        CrashReporter.install(this);
+
         getWindow().getDecorView().setBackgroundColor(COLOR_BG);
         maqams = MaqamLibrary.buildAll();
         engine = new AudioEngine();
@@ -144,6 +150,15 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         TextView note = label("ملف: محفوظ في مجلد Music في الجهاز", 12, COLOR_SUBTEXT);
         note.setGravity(Gravity.CENTER);
         page.addView(note, mpWrap(0, dp(12)));
+
+        // ─── تقارير الأعطال ──────────────────────────────────────────
+        File[] crashes = CrashReporter.listReports(this);
+        if (crashes.length > 0) {
+            page.addView(sectionTitle("⚠ تقارير أعطال محفوظة"));
+            for (File crash : crashes) {
+                page.addView(buildCrashRow(crash), mpWrap(0, dp(4)));
+            }
+        }
 
         setContentView(root);
     }
@@ -475,6 +490,68 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         btnDel.setOnClickListener(v -> {
             file.delete();
             refreshRecordingsList();
+        });
+        row.addView(btnDel);
+
+        return row;
+    }
+
+    private View buildCrashRow(File crash) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackgroundColor(0xFF2A1020);
+        row.setPadding(dp(12), dp(12), dp(12), dp(12));
+
+        String name = crash.getName().replace("crash_", "").replace(".txt", "");
+        String display = name;
+        try {
+            Date d = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(name);
+            display = new SimpleDateFormat("dd/MM/yyyy  HH:mm:ss", Locale.US).format(d);
+        } catch (Exception ignored) {}
+
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        info.addView(label("⚠ عطل: " + display, 13, COLOR_RED));
+        info.addView(label(formatSize(crash.length()), 11, COLOR_SUBTEXT));
+        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        row.addView(info, infoLp);
+
+        // زر نسخ النص كاملاً إلى الحافظة
+        TextView btnCopy = new TextView(this);
+        btnCopy.setText("نسخ");
+        btnCopy.setTextSize(14);
+        btnCopy.setTextColor(COLOR_GOLD);
+        btnCopy.setPadding(dp(10), dp(8), dp(10), dp(8));
+        btnCopy.setOnClickListener(v -> {
+            try {
+                java.io.BufferedReader br = new java.io.BufferedReader(
+                        new java.io.FileReader(crash));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) { sb.append(line).append('\n'); }
+                br.close();
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(ClipData.newPlainText("crash", sb.toString()));
+                Toast.makeText(this, "✓ تم النسخ — الصقه في أي تطبيق وأرسله",
+                        Toast.LENGTH_LONG).show();
+            } catch (Exception e) {
+                Toast.makeText(this, "تعذّر قراءة الملف", Toast.LENGTH_SHORT).show();
+            }
+        });
+        row.addView(btnCopy);
+
+        // زر حذف
+        TextView btnDel = new TextView(this);
+        btnDel.setText("✕");
+        btnDel.setTextSize(18);
+        btnDel.setTextColor(COLOR_RED);
+        btnDel.setPadding(dp(8), dp(8), dp(8), dp(8));
+        btnDel.setOnClickListener(v -> {
+            crash.delete();
+            if (row.getParent() instanceof ViewGroup)
+                ((ViewGroup) row.getParent()).removeView(row);
         });
         row.addView(btnDel);
 
