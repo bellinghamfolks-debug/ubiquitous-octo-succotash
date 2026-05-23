@@ -79,16 +79,100 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // تثبيت كاشف الأعطال أولاً قبل أي شيء
+        // CrashReporter مُثبَّت مسبقاً في AutoTuneApp — نُعيد التثبيت احتياطاً
         CrashReporter.install(this);
 
-        getWindow().getDecorView().setBackgroundColor(COLOR_BG);
-        maqams = MaqamLibrary.buildAll();
-        engine = new AudioEngine();
-        engine.setListener(this);
-        engine.setMaqam(maqams.get(selectedMaqamIdx));
-        engine.setRootHz(MaqamLibrary.ROOT_FREQUENCIES[selectedRootIdx]);
-        buildUi();
+        try {
+            getWindow().getDecorView().setBackgroundColor(COLOR_BG);
+            maqams = MaqamLibrary.buildAll();
+            engine = new AudioEngine();
+            engine.setListener(this);
+            engine.setMaqam(maqams.get(selectedMaqamIdx));
+            engine.setRootHz(MaqamLibrary.ROOT_FREQUENCIES[selectedRootIdx]);
+            buildUi();
+        } catch (Throwable t) {
+            showStartupError(t);
+        }
+    }
+
+    /** يعرض الخطأ على الشاشة مباشرة بدون أي كود معقد */
+    private void showStartupError(Throwable t) {
+        // حفظ في ملف
+        try {
+            java.io.File dir = new java.io.File(getFilesDir(), "crashes");
+            dir.mkdirs();
+            java.io.File f = new java.io.File(dir, "startup_error.txt");
+            java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(f));
+            pw.println("Android: " + android.os.Build.VERSION.RELEASE
+                    + " API " + android.os.Build.VERSION.SDK_INT);
+            pw.println("Device: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
+            t.printStackTrace(pw);
+            pw.close();
+        } catch (Exception ignored) {}
+
+        // عرض الخطأ كنص على الشاشة حتى يتمكن المستخدم من قراءته
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        sv.setBackgroundColor(0xFF0D0D14);
+        android.widget.LinearLayout ll = new android.widget.LinearLayout(this);
+        ll.setOrientation(android.widget.LinearLayout.VERTICAL);
+        ll.setPadding(30, 60, 30, 30);
+        sv.addView(ll);
+
+        android.widget.TextView title = new android.widget.TextView(this);
+        title.setText("⚠ خطأ عند البدء — خذ لقطة شاشة");
+        title.setTextColor(0xFFFF1744);
+        title.setTextSize(18);
+        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        ll.addView(title);
+
+        android.widget.TextView info = new android.widget.TextView(this);
+        info.setText("Android " + android.os.Build.VERSION.RELEASE
+                + " | " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
+        info.setTextColor(0xFF8888AA);
+        info.setTextSize(13);
+        info.setPadding(0, 12, 0, 12);
+        ll.addView(info);
+
+        // رسالة الخطأ الكاملة
+        java.io.StringWriter sw = new java.io.StringWriter();
+        t.printStackTrace(new java.io.PrintWriter(sw));
+        String trace = sw.toString();
+
+        android.widget.TextView tv = new android.widget.TextView(this);
+        tv.setText(trace);
+        tv.setTextColor(0xFFFFCCCC);
+        tv.setTextSize(11);
+        tv.setTypeface(android.graphics.Typeface.MONOSPACE);
+        ll.addView(tv);
+
+        // زر نسخ
+        android.widget.TextView btnCopy = new android.widget.TextView(this);
+        btnCopy.setText("نسخ النص كاملاً");
+        btnCopy.setTextColor(android.graphics.Color.BLACK);
+        btnCopy.setTextSize(16);
+        btnCopy.setGravity(android.view.Gravity.CENTER);
+        btnCopy.setPadding(20, 20, 20, 20);
+        btnCopy.setBackgroundColor(0xFFD4A017);
+        final String finalTrace = "Android " + android.os.Build.VERSION.RELEASE
+                + " API " + android.os.Build.VERSION.SDK_INT
+                + " | " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+                + "\n\n" + trace;
+        btnCopy.setOnClickListener(new android.view.View.OnClickListener() {
+            public void onClick(android.view.View v) {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                        getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("err", finalTrace));
+                android.widget.Toast.makeText(MainActivity.this,
+                        "تم النسخ — الصقه هنا في المحادثة", android.widget.Toast.LENGTH_LONG).show();
+            }
+        });
+        android.widget.LinearLayout.LayoutParams btnLp = new android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnLp.setMargins(0, 24, 0, 0);
+        ll.addView(btnCopy, btnLp);
+
+        setContentView(sv);
     }
 
     @Override
