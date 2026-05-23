@@ -1,7 +1,7 @@
 package com.autotune.arabic.engine;
 
+import android.media.AudioAttributes;
 import android.media.AudioFormat;
-import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
@@ -65,6 +65,7 @@ public class AudioEngine {
 
     private double currentRatio = 1.0;
     private long   recordingStartMs = 0;
+    private int    uiFrameCounter = 0;
 
     public AudioEngine() {
         detector = new PitchDetector(SAMPLE_RATE, DETECT_BUFFER);
@@ -119,24 +120,42 @@ public class AudioEngine {
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         if (minBuf == AudioRecord.ERROR_BAD_VALUE) return false;
 
-        recorder = new AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
-                Math.max(minBuf, PROCESS_BUFFER * 4));
+        recorder = new AudioRecord.Builder()
+                .setAudioSource(MediaRecorder.AudioSource.MIC)
+                .setAudioFormat(new AudioFormat.Builder()
+                        .setSampleRate(SAMPLE_RATE)
+                        .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .build())
+                .setBufferSizeInBytes(Math.max(minBuf, PROCESS_BUFFER * 4))
+                .build();
         if (recorder.getState() != AudioRecord.STATE_INITIALIZED) {
             recorder.release(); return false;
         }
 
         int minTrack = AudioTrack.getMinBufferSize(SAMPLE_RATE,
                 AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
-        player = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE,
-                AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT,
-                Math.max(minTrack, PROCESS_BUFFER * 8), AudioTrack.MODE_STREAM);
+        player = new AudioTrack.Builder()
+                .setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build())
+                .setAudioFormat(new AudioFormat.Builder()
+                        .setSampleRate(SAMPLE_RATE)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .build())
+                .setBufferSizeInBytes(Math.max(minTrack, PROCESS_BUFFER * 8))
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build();
         if (player.getState() != AudioTrack.STATE_INITIALIZED) {
             recorder.release(); player.release(); return false;
         }
 
         shifter.reset();
         currentRatio = 1.0;
+        detectPos = 0;
+        java.util.Arrays.fill(detectBuf, 0f);
         recorder.startRecording();
         player.play();
         running = true;
@@ -175,8 +194,10 @@ public class AudioEngine {
                 detectPos = (detectPos + 1) % DETECT_BUFFER;
             }
 
-            double detectedHz = detector.detect(detectBuf);
+            double detectedHz = detector.detect(detectBuf, detectPos);
             double ratio = 1.0;
+            uiFrameCounter++;
+            boolean postUi = (uiFrameCounter % 4 == 0);
 
             if (detectedHz > 0 && activeMaqam != null && !bypassMode) {
                 double targetHz  = activeMaqam.nearestNote(detectedHz, rootHz);
@@ -185,7 +206,7 @@ public class AudioEngine {
                 currentRatio += (ratio - currentRatio) * correctionSpeed;
                 ratio = currentRatio;
 
-                if (listener != null) {
+                if (postUi && listener != null) {
                     double dev  = activeMaqam.deviationCents(detectedHz, rootHz);
                     String name = activeMaqam.nearestNoteName(detectedHz, rootHz);
                     final double fd = detectedHz, ft = activeMaqam.nearestNote(detectedHz, rootHz), fdev = dev;
@@ -200,7 +221,7 @@ public class AudioEngine {
             } else if (detectedHz <= 0) {
                 currentRatio = 1.0;
                 shifter.reset();
-                if (listener != null) {
+                if (postUi && listener != null) {
                     final Listener snap = listener;
                     mainHandler.post(new Runnable() {
                         public void run() { if (snap != null) snap.onSilence(); }

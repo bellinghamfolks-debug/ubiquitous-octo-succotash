@@ -78,6 +78,8 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     private LinearLayout   recordingsContainer;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private long     recStartMs   = 0;
+    private Runnable recTimerTask = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -409,6 +411,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
     private void toggleEngine() {
         if (engine.isRunning()) {
+            if (recTimerTask != null) { uiHandler.removeCallbacks(recTimerTask); recTimerTask = null; }
             engine.stop();
             btnStart.setText("▶  ابدأ المعالجة");
             btnStart.setBackgroundColor(COLOR_GOLD);
@@ -485,6 +488,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
     private void toggleRecording() {
         if (engine.isRecording()) {
+            if (recTimerTask != null) { uiHandler.removeCallbacks(recTimerTask); recTimerTask = null; }
             engine.stopRecording();
             btnRecord.setText("⏺  ابدأ التسجيل");
             btnRecord.setBackgroundColor(COLOR_REC);
@@ -495,8 +499,19 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
             if (engine.startRecording(dir)) {
                 btnRecord.setText("⏹  إيقاف التسجيل");
                 btnRecord.setBackgroundColor(0xFFB71C1C);
-                tvStatus.setText("⏺ يُسجِّل...");
-                tvStatus.setTextColor(COLOR_REC);
+                recStartMs = System.currentTimeMillis();
+                recTimerTask = new Runnable() {
+                    public void run() {
+                        if (engine.isRecording()) {
+                            long s = (System.currentTimeMillis() - recStartMs) / 1000;
+                            tvStatus.setText("⏺ يُسجِّل  " + (s / 60) + ":"
+                                    + String.format("%02d", s % 60));
+                            tvStatus.setTextColor(COLOR_REC);
+                            uiHandler.postDelayed(this, 1000);
+                        }
+                    }
+                };
+                uiHandler.post(recTimerTask);
             } else {
                 Toast.makeText(this, "تعذّر بدء التسجيل", Toast.LENGTH_SHORT).show();
             }
@@ -622,7 +637,8 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         row.setPadding(dp(12), dp(12), dp(12), dp(12));
 
         String name = crash.getName().replace("crash_", "").replace(".txt", "")
-                                     .replace("startup_error", "خطأ بدء");
+                                     .replace("startup_error", "خطأ بدء")
+                                     .replace("engine_error", "خطأ محرك");
         String display = name;
         try {
             Date d = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).parse(name);
@@ -681,14 +697,17 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     // ─── تشغيل ومشاركة ───────────────────────────────────────────────
 
     private MediaPlayer currentPlayer;
+    private TextView    currentPlayBtn;
 
     private void playFile(final File file, final TextView btn) {
         if (currentPlayer != null) {
             currentPlayer.stop();
             currentPlayer.release();
             currentPlayer = null;
-            btn.setText("▶");
-            return;
+            if (currentPlayBtn != null) { currentPlayBtn.setText("▶"); }
+            boolean wasSameBtn = (currentPlayBtn == btn);
+            currentPlayBtn = null;
+            if (wasSameBtn) return;
         }
         try {
             currentPlayer = new MediaPlayer();
@@ -696,10 +715,12 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
             currentPlayer.prepare();
             currentPlayer.start();
             btn.setText("■");
+            currentPlayBtn = btn;
             currentPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
                 public void onCompletion(MediaPlayer mp) {
                     mp.release();
                     currentPlayer = null;
+                    currentPlayBtn = null;
                     uiHandler.post(new Runnable() {
                         public void run() { btn.setText("▶"); }
                     });
