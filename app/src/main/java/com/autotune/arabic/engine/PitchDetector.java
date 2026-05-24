@@ -7,8 +7,8 @@ public class PitchDetector {
 
     public static final double NO_PITCH = -1.0;
 
-    private static final double YIN_THRESHOLD = 0.12;
-    private static final double MIN_ENERGY    = 5e-5;
+    private static final double YIN_THRESHOLD = 0.15;
+    private static final double MIN_ENERGY    = 1e-6;
 
     private final int     sampleRate;
     private final int     bufferSize;

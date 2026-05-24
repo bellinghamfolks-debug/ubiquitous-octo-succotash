@@ -296,6 +296,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         card.addView(row, mpWrap(0, dp(16)));
 
         pitchMeter = new PitchMeterView(this);
+        pitchMeter.setContentDescription("مقياس الانحراف الصوتي");
         card.addView(pitchMeter, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(36)));
 
@@ -361,6 +362,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         card.addView(label("قوة التصحيح", 14, COLOR_TEXT));
         SeekBar sbSens = new SeekBar(this);
         sbSens.setMax(100); sbSens.setProgress(100);
+        sbSens.setContentDescription("قوة التصحيح — شريط تمرير");
         sbSens.setOnSeekBarChangeListener(simpleSeek(new SeekAction() {
             public void onValue(int p) { engine.setSensitivity(p / 100.0); }
         }));
@@ -369,6 +371,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
         card.addView(label("سرعة التصحيح  (بطيء ◄────► سريع)", 14, COLOR_TEXT));
         SeekBar sbSpeed = new SeekBar(this);
         sbSpeed.setMax(100); sbSpeed.setProgress(30);
+        sbSpeed.setContentDescription("سرعة التصحيح — شريط تمرير");
         sbSpeed.setOnSeekBarChangeListener(simpleSeek(new SeekAction() {
             public void onValue(int p) { engine.setCorrectionSpeed(0.01 + p / 100.0 * 0.49); }
         }));
@@ -379,6 +382,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     private View buildStartButton() {
         btnStart = new TextView(this);
         btnStart.setText("▶  ابدأ المعالجة");
+        btnStart.setContentDescription("ابدأ المعالجة الصوتية");
         btnStart.setTextSize(20);
         btnStart.setTypeface(Typeface.DEFAULT_BOLD);
         btnStart.setTextColor(Color.BLACK);
@@ -394,6 +398,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     private View buildRecordButton() {
         btnRecord = new TextView(this);
         btnRecord.setText("⏺  ابدأ التسجيل");
+        btnRecord.setContentDescription("ابدأ تسجيل الصوت المُعالَج");
         btnRecord.setTextSize(18);
         btnRecord.setTypeface(Typeface.DEFAULT_BOLD);
         btnRecord.setTextColor(Color.WHITE);
@@ -598,6 +603,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
         final TextView btnPlay = new TextView(this);
         btnPlay.setText("▶");
+        btnPlay.setContentDescription("تشغيل التسجيل");
         btnPlay.setTextSize(20);
         btnPlay.setTextColor(COLOR_GREEN);
         btnPlay.setPadding(dp(12), dp(8), dp(12), dp(8));
@@ -608,6 +614,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
         TextView btnShare = new TextView(this);
         btnShare.setText("↑");
+        btnShare.setContentDescription("مشاركة التسجيل");
         btnShare.setTextSize(20);
         btnShare.setTextColor(COLOR_GOLD);
         btnShare.setPadding(dp(8), dp(8), dp(8), dp(8));
@@ -618,6 +625,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
         TextView btnDel = new TextView(this);
         btnDel.setText("✕");
+        btnDel.setContentDescription("حذف التسجيل");
         btnDel.setTextSize(18);
         btnDel.setTextColor(COLOR_RED);
         btnDel.setPadding(dp(8), dp(8), dp(8), dp(8));
@@ -653,6 +661,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
         TextView btnCopy = new TextView(this);
         btnCopy.setText("نسخ");
+        btnCopy.setContentDescription("نسخ تقرير العطل");
         btnCopy.setTextSize(14);
         btnCopy.setTextColor(COLOR_GOLD);
         btnCopy.setPadding(dp(10), dp(8), dp(10), dp(8));
@@ -679,6 +688,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
         TextView btnDel = new TextView(this);
         btnDel.setText("✕");
+        btnDel.setContentDescription("حذف تقرير العطل");
         btnDel.setTextSize(18);
         btnDel.setTextColor(COLOR_RED);
         btnDel.setPadding(dp(8), dp(8), dp(8), dp(8));
@@ -704,7 +714,10 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
             currentPlayer.stop();
             currentPlayer.release();
             currentPlayer = null;
-            if (currentPlayBtn != null) { currentPlayBtn.setText("▶"); }
+            if (currentPlayBtn != null) {
+                currentPlayBtn.setText("▶");
+                currentPlayBtn.setContentDescription("تشغيل التسجيل");
+            }
             boolean wasSameBtn = (currentPlayBtn == btn);
             currentPlayBtn = null;
             if (wasSameBtn) return;
@@ -715,6 +728,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
             currentPlayer.prepare();
             currentPlayer.start();
             btn.setText("■");
+            btn.setContentDescription("إيقاف التسجيل");
             currentPlayBtn = btn;
             currentPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
                 public void onCompletion(MediaPlayer mp) {
@@ -722,7 +736,10 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
                     currentPlayer = null;
                     currentPlayBtn = null;
                     uiHandler.post(new Runnable() {
-                        public void run() { btn.setText("▶"); }
+                        public void run() {
+                            btn.setText("▶");
+                            btn.setContentDescription("تشغيل التسجيل");
+                        }
                     });
                 }
             });
@@ -732,8 +749,13 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     }
 
     private void shareFile(File file) {
-        Toast.makeText(this, "مسار الملف:\n" + file.getAbsolutePath(),
-                Toast.LENGTH_LONG).show();
+        android.net.Uri uri = AudioFileProvider.uriForFile(file);
+        android.content.Intent intent = new android.content.Intent(
+                android.content.Intent.ACTION_SEND);
+        intent.setType("audio/wav");
+        intent.putExtra(android.content.Intent.EXTRA_STREAM, uri);
+        intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(android.content.Intent.createChooser(intent, "مشاركة التسجيل"));
     }
 
     // ─── استجابة المحرك ──────────────────────────────────────────────

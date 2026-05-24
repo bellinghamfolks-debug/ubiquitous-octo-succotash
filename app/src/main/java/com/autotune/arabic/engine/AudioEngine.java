@@ -63,9 +63,10 @@ public class AudioEngine {
     private final float[] detectBuf = new float[DETECT_BUFFER];
     private int detectPos = 0;
 
-    private double currentRatio = 1.0;
-    private long   recordingStartMs = 0;
-    private int    uiFrameCounter = 0;
+    private double  currentRatio    = 1.0;
+    private long    recordingStartMs = 0;
+    private int     uiFrameCounter  = 0;
+    private boolean voiceWasActive  = false;
 
     public AudioEngine() {
         detector = new PitchDetector(SAMPLE_RATE, DETECT_BUFFER);
@@ -153,8 +154,9 @@ public class AudioEngine {
         }
 
         shifter.reset();
-        currentRatio = 1.0;
-        detectPos = 0;
+        currentRatio   = 1.0;
+        detectPos      = 0;
+        voiceWasActive = false;
         java.util.Arrays.fill(detectBuf, 0f);
         recorder.startRecording();
         player.play();
@@ -200,6 +202,7 @@ public class AudioEngine {
             boolean postUi = (uiFrameCounter % 4 == 0);
 
             if (detectedHz > 0 && activeMaqam != null && !bypassMode) {
+                voiceWasActive = true;
                 double targetHz  = activeMaqam.nearestNote(detectedHz, rootHz);
                 double rawRatio  = targetHz > 0 ? targetHz / detectedHz : 1.0;
                 ratio = 1.0 + (rawRatio - 1.0) * sensitivity;
@@ -219,8 +222,13 @@ public class AudioEngine {
                     });
                 }
             } else if (detectedHz <= 0) {
+                // reset الـ shifter مرة واحدة فقط عند الانتقال من صوت → صمت
+                // (لو reset كل إطار: outFill يُصفَّر 43 مرة/ثانية → وشوشة 43 هرتز)
+                if (voiceWasActive) {
+                    voiceWasActive = false;
+                    shifter.reset();
+                }
                 currentRatio = 1.0;
-                shifter.reset();
                 if (postUi && listener != null) {
                     final Listener snap = listener;
                     mainHandler.post(new Runnable() {
