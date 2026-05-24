@@ -39,7 +39,7 @@ public class AudioEngine {
     private volatile double  rootHz          = 293.66;
     private volatile boolean bypassMode      = false;
     private volatile double  sensitivity     = 1.0;
-    private volatile double  correctionSpeed = 0.10;
+    private volatile double  correctionSpeed = 0.30;
 
     // واجهة الاسترجاع لتحديث الواجهة
     public interface Listener {

@@ -43,8 +43,6 @@ public class PitchShifter {
     private final double[] synMag  = new double[BINS];
     private final double[] synFreq = new double[BINS];
 
-    private double smoothedRatio = 1.0;
-
     public PitchShifter(int sampleRate) {
         this.sampleRate = sampleRate;
         this.fft = new FFT(FFT_SIZE);
@@ -53,8 +51,10 @@ public class PitchShifter {
     }
 
     public void process(float[] input, float[] output, double targetRatio) {
-        smoothedRatio += (targetRatio - smoothedRatio) * 0.08;
-        double ratio = smoothedRatio;
+        // التنعيم يتم في AudioEngine عبر correctionSpeed (شريط المستخدم).
+        // تنعيم إضافي هنا = تأخير مضاعف (~1.5 ثانية) → الـ ratio يبقى ~1.0
+        // → bypass دائم → لا autotune. نمرر الـ ratio كما هو.
+        double ratio = targetRatio;
         int len = Math.min(input.length, output.length);
 
         for (int i = 0; i < len; i++) {
@@ -162,7 +162,6 @@ public class PitchShifter {
         inHopCnt  = 0;
         outRdPos  = 0;
         outFill   = 0;
-        smoothedRatio = 1.0;
     }
 
     private float clamp(float v) {

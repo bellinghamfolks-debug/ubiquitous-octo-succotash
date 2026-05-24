@@ -370,7 +370,7 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
 
         card.addView(label("سرعة التصحيح  (بطيء ◄────► سريع)", 14, COLOR_TEXT));
         SeekBar sbSpeed = new SeekBar(this);
-        sbSpeed.setMax(100); sbSpeed.setProgress(30);
+        sbSpeed.setMax(100); sbSpeed.setProgress(60);
         sbSpeed.setContentDescription("سرعة التصحيح — شريط تمرير");
         sbSpeed.setOnSeekBarChangeListener(simpleSeek(new SeekAction() {
             public void onValue(int p) { engine.setCorrectionSpeed(0.01 + p / 100.0 * 0.49); }
