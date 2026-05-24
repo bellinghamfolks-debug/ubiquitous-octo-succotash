@@ -76,6 +76,12 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     private TextView       btnStart, btnRecord;
     private CheckBox       chkBypass;
     private LinearLayout   recordingsContainer;
+    private LinearLayout   crashesContainer;
+
+    // التبويبات
+    private TextView[]   tabButtons;
+    private LinearLayout tabContent;
+    private View[]       tabPages;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private long     recStartMs   = 0;
@@ -186,55 +192,139 @@ public class MainActivity extends Activity implements AudioEngine.Listener {
     // ─── بناء الواجهة ────────────────────────────────────────────────
 
     private void buildUi() {
-        ScrollView root = new ScrollView(this);
+        // البنية: [Header + Pitch Display + Tab Bar] ثابت أعلى
+        //         [محتوى التبويب] منطقة منزلقة في الوسط
+        //         [زرّ المعالجة + زرّ التسجيل] ثابت أسفل
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(COLOR_BG);
-        root.setFillViewport(true);
+        root.setPadding(dp(16), dp(20), dp(16), dp(12));
 
-        LinearLayout page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(16), dp(24), dp(16), dp(32));
-        root.addView(page);
+        root.addView(buildHeader(), mpWrap());
+        root.addView(buildPitchDisplay(), mpWrap(0, dp(12)));
+        root.addView(buildTabBar(), mpWrap(0, dp(12)));
 
-        page.addView(buildHeader());
-        page.addView(buildPitchDisplay(), mpWrap(0, dp(20)));
-        page.addView(sectionTitle("اختر المقام"));
-        page.addView(buildMaqamGrid(), mpWrap(0, dp(8)));
-        page.addView(sectionTitle("نغمة الجذر"));
-        page.addView(buildRootRow(), mpWrap(0, dp(8)));
-        page.addView(sectionTitle("إعدادات التصحيح"));
-        page.addView(buildControls(), mpWrap(0, dp(8)));
+        // المنطقة المنزلقة (تأخذ المساحة الفائضة)
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        tabContent = new LinearLayout(this);
+        tabContent.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(tabContent);
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        scrollLp.setMargins(0, dp(4), 0, dp(8));
+        root.addView(scroll, scrollLp);
+
+        root.addView(buildStartButton(),  mpWrap(0, dp(4)));
+        root.addView(buildRecordButton(), mpWrap(0, dp(6)));
+
+        // بناء صفحات التبويبات
+        recordingsContainer = new LinearLayout(this);
+        recordingsContainer.setOrientation(LinearLayout.VERTICAL);
+        crashesContainer = new LinearLayout(this);
+        crashesContainer.setOrientation(LinearLayout.VERTICAL);
+
+        tabPages = new View[]{
+                buildMaqamPage(),
+                buildSettingsPage(),
+                buildRecordingsPage()
+        };
+        selectTab(0);
+
+        setContentView(root);
+    }
+
+    private View buildTabBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setBackgroundColor(COLOR_CARD);
+
+        String[] labels = {"المقامات", "الإعدادات", "التسجيلات"};
+        String[] descs  = {"تبويب المقامات", "تبويب الإعدادات", "تبويب التسجيلات"};
+        tabButtons = new TextView[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            final int idx = i;
+            TextView t = new TextView(this);
+            t.setText(labels[i]);
+            t.setContentDescription(descs[i]);
+            t.setTextSize(15);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(dp(4), dp(14), dp(4), dp(14));
+            t.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { selectTab(idx); }
+            });
+            tabButtons[i] = t;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            bar.addView(t, lp);
+        }
+        return bar;
+    }
+
+    private void selectTab(int idx) {
+        for (int i = 0; i < tabButtons.length; i++) {
+            boolean sel = (i == idx);
+            tabButtons[i].setBackgroundColor(sel ? COLOR_GOLD  : COLOR_CARD);
+            tabButtons[i].setTextColor      (sel ? Color.BLACK : COLOR_TEXT);
+            tabButtons[i].setTypeface       (sel ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        }
+        // فصل الصفحة من أيّ parent سابق ثم إضافتها
+        View page = tabPages[idx];
+        if (page.getParent() instanceof ViewGroup) {
+            ((ViewGroup) page.getParent()).removeView(page);
+        }
+        tabContent.removeAllViews();
+        tabContent.addView(page, mpWrap());
+    }
+
+    private View buildMaqamPage() {
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        p.addView(sectionTitle("اختر المقام"));
+        p.addView(buildMaqamGrid(), mpWrap(0, dp(8)));
+        p.addView(sectionTitle("نغمة الجذر"));
+        p.addView(buildRootRow(), mpWrap(0, dp(8)));
+        return p;
+    }
+
+    private View buildSettingsPage() {
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        p.addView(sectionTitle("إعدادات التصحيح"));
+        p.addView(buildControls(), mpWrap(0, dp(8)));
 
         chkBypass = new CheckBox(this);
         chkBypass.setText("وضع التمرير المباشر (Bypass)");
+        chkBypass.setContentDescription("تفعيل وضع التمرير المباشر بدون معالجة");
         chkBypass.setTextColor(COLOR_SUBTEXT);
         chkBypass.setTextSize(15);
         chkBypass.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton b, boolean c) { engine.setBypass(c); }
         });
-        page.addView(chkBypass, mpWrap(0, dp(12)));
+        p.addView(chkBypass, mpWrap(0, dp(16)));
+        return p;
+    }
 
-        page.addView(buildStartButton(), mpWrap(dp(8), dp(4)));
-        page.addView(buildRecordButton(), mpWrap(dp(8), dp(8)));
-
-        page.addView(sectionTitle("التسجيلات المحفوظة"));
-        recordingsContainer = new LinearLayout(this);
-        recordingsContainer.setOrientation(LinearLayout.VERTICAL);
-        page.addView(recordingsContainer, mpWrap(0, dp(4)));
+    private View buildRecordingsPage() {
+        LinearLayout p = new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        p.addView(sectionTitle("التسجيلات المحفوظة"));
+        p.addView(recordingsContainer, mpWrap(0, dp(4)));
         refreshRecordingsList();
 
         TextView note = label("محفوظ في مجلد Music في الجهاز", 12, COLOR_SUBTEXT);
         note.setGravity(Gravity.CENTER);
-        page.addView(note, mpWrap(0, dp(12)));
+        p.addView(note, mpWrap(0, dp(12)));
 
         File[] crashes = CrashReporter.listReports(this);
         if (crashes.length > 0) {
-            page.addView(sectionTitle("⚠ تقارير أعطال محفوظة"));
+            p.addView(sectionTitle("⚠ تقارير أعطال محفوظة"));
             for (File crash : crashes) {
-                page.addView(buildCrashRow(crash), mpWrap(0, dp(4)));
+                crashesContainer.addView(buildCrashRow(crash), mpWrap(0, dp(4)));
             }
+            p.addView(crashesContainer, mpWrap(0, dp(4)));
         }
-
-        setContentView(root);
+        return p;
     }
 
     private View buildHeader() {
