@@ -1,0 +1,99 @@
+name: بناء APK أوتوتيون عربي
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: بناء وتوقيع APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: استنساخ الكود
+        uses: actions/checkout@v4
+
+      - name: إعداد Java 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: تثبيت أدوات Android SDK
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y android-sdk android-sdk-build-tools android-sdk-platform-23 dalvik-exchange
+
+      - name: تجميع Java
+        run: |
+          mkdir -p /tmp/build/classes
+          find app/src/main/java -name "*.java" | xargs javac \
+            -source 8 -target 8 \
+            -Xlint:-options \
+            -classpath /usr/lib/android-sdk/platforms/android-23/android.jar \
+            -d /tmp/build/classes
+
+      - name: تحويل إلى DEX
+        run: |
+          /usr/lib/android-sdk/build-tools/debian/dx \
+            --dex \
+            --min-sdk-version=26 \
+            --output=/tmp/build/classes.dex \
+            /tmp/build/classes/
+
+      - name: معالجة الموارد
+        run: |
+          /usr/lib/android-sdk/build-tools/debian/aapt2 compile \
+            --dir app/src/main/res \
+            -o /tmp/build/compiled_res.zip
+
+      - name: ربط الموارد وإنشاء APK
+        run: |
+          /usr/lib/android-sdk/build-tools/debian/aapt2 link \
+            -o /tmp/build/base.apk \
+            -I /usr/lib/android-sdk/platforms/android-23/android.jar \
+            --manifest app/src/main/AndroidManifest.xml \
+            /tmp/build/compiled_res.zip \
+            --min-sdk-version 23 \
+            --target-sdk-version 34 \
+            --version-code 1 \
+            --version-name "1.0"
+          cd /tmp/build && zip -j base.apk classes.dex
+
+      - name: إنشاء keystore وتوقيع APK
+        run: |
+          keytool -genkeypair \
+            -alias autotune \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -keystore /tmp/build/debug.keystore \
+            -storepass android \
+            -keypass android \
+            -dname "CN=AutoTune,OU=Dev,O=Dev,C=US" \
+            -noprompt
+
+          /usr/lib/android-sdk/build-tools/debian/zipalign \
+            -f 4 \
+            /tmp/build/base.apk \
+            /tmp/build/aligned.apk
+
+          /usr/lib/android-sdk/build-tools/debian/apksigner sign \
+            --ks /tmp/build/debug.keystore \
+            --ks-key-alias autotune \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out AutoTuneArabic.apk \
+            /tmp/build/aligned.apk
+
+          ls -lh AutoTuneArabic.apk
+
+      - name: رفع APK كـ Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoTuneArabic-APK
+          path: AutoTuneArabic.apk
+          retention-days: 30
